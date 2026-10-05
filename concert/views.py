@@ -1,4 +1,4 @@
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, authenticate
 from django.contrib.auth.models import User
 from django.http import HttpResponseRedirect, HttpResponse
 from django.shortcuts import get_object_or_404
@@ -11,35 +11,75 @@ from concert.models import Concert, ConcertAttending
 import requests as req
 
 
-# Create your views here.
+def songs(request):
+    songurl = "http://localhost:5000/song"
+    response = req.get(songurl)
+    songs = response.json()
+    return render(request, "songs.html", {"songs": songs["songs"]})
 
-def signup(request):
-    pass
+
+def photos(request):
+    phourl = "http://localhost:3000/picture"
+    response = req.get(phourl)
+    photos = response.json()
+    return render(request, "photos.html", {"photos": photos})
 
 
 def index(request):
     return render(request, "index.html")
 
 
-def songs(request):
-    # songs = {"songs":[]}
-    # return render(request, "songs.html", {"songs": [insert list here]})
-    pass
+def signup(request):
+    form = SignUpForm()
+    if request.method == "POST":
+        form = SignUpForm(request.POST)
+        if form.is_valid():
+            username = form.cleaned_data["username"]
+            password = form.cleaned_data["password"]
+            try:
+                user = User.objects.get(username=username)
+                return render(request, "signup.html", {"form": form, "message": "User already exists"})
+            except User.DoesNotExist:
+                user = User.objects.create(username=username, password=make_password(password))
+                login(request, user)
+                return HttpResponseRedirect(reverse("index"))
+    return render(request, "signup.html", {"form": form})
 
-
-def photos(request):
-    # photos = []
-    # return render(request, "photos.html", {"photos": photos})
-    pass
 
 def login_view(request):
-    pass
+    form = LoginForm()
+    if request.method == "POST":
+        form = LoginForm(request.POST)
+        if form.is_valid():
+            username = form.cleaned_data["username"]
+            password = form.cleaned_data["password"]
+            user = authenticate(username=username, password=password)
+            if user is not None:
+                login(request, user)
+                return HttpResponseRedirect(reverse("index"))
+            else:
+                return render(request, "login.html", {"form": form, "message": "Invalid username or password"})
+    return render(request, "login.html", {"form": form})
+
 
 def logout_view(request):
-    pass
+    logout(request)
+    return HttpResponseRedirect(reverse("index"))
+
 
 def concerts(request):
-    pass
+    if request.user.is_authenticated:
+        concert_list = Concert.objects.all()
+        attending = {}
+        for concert in concert_list:
+            try:
+                status = concert.attendee.filter(user=request.user).first().attending
+            except:
+                status = "-"
+            attending[concert.id] = status
+        return render(request, "concerts.html", {"concerts": concert_list, "attending": attending})
+    else:
+        return HttpResponseRedirect(reverse("login"))
 
 
 def concert_detail(request, id):
@@ -52,7 +92,6 @@ def concert_detail(request, id):
         return render(request, "concert_detail.html", {"concert_details": obj, "status": status, "attending_choices": ConcertAttending.AttendingChoices.choices})
     else:
         return HttpResponseRedirect(reverse("login"))
-    pass
 
 
 def concert_attendee(request):
@@ -69,7 +108,6 @@ def concert_attendee(request):
                 ConcertAttending.objects.create(concert_id=concert_id,
                                                 user=request.user,
                                                 attending=attendee_status)
-
         return HttpResponseRedirect(reverse("concerts"))
     else:
         return HttpResponseRedirect(reverse("index"))
